@@ -1,0 +1,159 @@
+---------------- configurar mosquitto.conf -------------------
+
+essas configuracoes de banco de dados ainda nao foram testadas
+
+#auth_plugin /etc/mosquitto/auth-plug.so
+#auth_opt_backends mysql
+#auth_opt_redis_host localhost
+#auth_opt_redis_port 12885
+#auth_opt_host localhost
+#auth_opt_port 3306
+#auth_opt_dbname mosquitto
+#auth_opt_user mosquitto
+#auth_opt_pass Pa$$w0rd
+#auth_opt_userquery SELECT pw FROM mqtt_users WHERE username = '%s'
+#auth_opt_superquery SELECT COUNT(*) FROM mqtt_users WHERE username = '%s' AND super = 1
+#auth_opt_aclquery SELECT topic FROM mqtt_acls WHERE (username = '%s') AND (rw >= %d)
+#auth_opt_anonusername AnonymouS
+
+---------------- configura para enviar saida de logs para os logs padrao, e para nao salvar topicos em disco ----------------
+
+pid_file /var/run/mosquitto.pid
+
+persistence false
+persistence_location /var/lib/mosquitto/
+
+log_dest file /var/log/mosquitto/mosquitto.log
+
+include_dir /etc/mosquitto/conf.d
+
+---------------- configure para nao aceitar conexoes sem usuario e senha ----------------
+
+allow_anonymous false
+password_file /etc/mosquitto/pwfile
+
+---------------- configure um arquivo ACL para controlar entradas de saidas topicos ----------------
+
+acl_file /etc/mosquitto/aclfile
+
+---------------- ouvir sem SSL/TLS na porta 1883 ----------------
+
+listener 1883
+protocol mqtt
+
+---------------- ouvir na porta que iremos configurar SSL/TLS abaixo ----------------
+
+listener 8883
+protocol mqtt
+
+---------------- configura MQTT em modo bridge ----------------
+1 - nome que voce vai dar pra esse bridge
+connection bridge-01
+
+2 - endereço e porta na internet do broker mqtt
+address debian-server.local:8883
+#address testes.bintechnology.com.br:8883
+
+3 - arquivo do certificado SSL/TLS que foi gerado no servidor na nuvem
+bridge_cafile /etc/mosquitto/certs/server.crt
+
+4 - redirecionamento dos topicos de entrada e saida
+topic # both 2 "" ""
+#topic # in 0 "" ""
+#topic # out 1 "" ""
+
+---------------- configurar SSL/TLS ----------------
+
+1  - Create a CA key pair
+2  - Create CA certificate and use the CA key from step 1 to sign it.
+3  - Create a broker key pair don’t password protect.
+4  - Create a broker certificate request using key from step 3
+5  - Use the CA certificate to sign the broker certificate request from step 4.
+6  - Now we should have a CA key file,a CA certificate file, a broker key file, and a broker certificate file.
+7  - Place all files in a directory on the broker e.g. certs
+8  - Copy the CA certificate file to the client.
+9  - Edit the Mosquitto conf file to use the files -details below
+10 - Edit the client script to use TLS and the CA certificate. -details below
+
+1 - openssl genrsa -des3 -out ca.key 2048
+esse comando vai solicitar a criacao de uma senha
+
+2 - openssl req -new -x509 -days 1826 -key ca.key -out ca.crt
+informe os campos de acordo, mas preste atençao no campo
+Common Name (e.g. server FQDN ou YOUR name):
+esse campo voce deve digitar o dominio onde esse servidor vai responder
+pra mim nao funcionou com IP, apenas com dominio
+exemplo: testes.bintechnology.com.br
+
+3 - openssl genrsa -out server.key 2048
+esse comando nao pede nada apenas gera as chaves
+
+4 - openssl req -new -out server.csr -key server.key
+informe as mesmas informaçoes do comando 2
+e nao esqueça de manter o mesmo nome do servidor no campo
+Common Name (e.g. server FQDN ou YOUR name):
+exemplo: testes.bintechnology.com.br
+
+5 - openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out server.crt -days 360
+esse campo vai pedir a senha que voce usou no processo
+
+gerou varios arquivos, no servidor vamos usar 3 arquivos
+coloque-os na pasta e configure o mosquitto.conf para encontra-los
+de preferencia na pasta /etc/mosquitto/certs/
+arquivo: ca.crt, serever.crt, server.key
+
+o arquivo mosquitto.conf ira ficar assim
+para um listener com SSL/TLS
+
+####################################################
+# MOSQUITTO LISTENER WITH SLL
+####################################################
+
+listener 8883
+protocol mqtt
+cafile /etc/mosquitto/certs/ca.crt
+certfile /etc/mosquitto/certs/server.crt
+keyfile /etc/mosquitto/certs/server.key
+require_certificate false
+tls_version tlsv1.2
+
+
+####################################################
+# MOSQUITTO LISTENER WITH SLL
+####################################################
+
+listener 8883
+allow_anonymous false
+password_file /etc/mosquitto/pwfile
+allow_duplicate_messages false
+#acl_file /etc/mosquitto/aclfile
+
+cafile /etc/mosquitto/certs/ca.crt
+certfile /etc/mosquitto/certs/server.crt
+keyfile /etc/mosquitto/certs/server.key
+require_certificate false
+tls_version tlsv1.2
+
+####################################################
+# MOSQUITTO BRIDGE CONFIGS
+####################################################
+
+connection bridge-jucelei
+address automacao.bintechnology.com.br:8883
+bridge_cafile /etc/mosquitto/certs/server.crt
+topic /# both 0 "" /jucelei
+bridge_insecure false
+bridge_tls_version tlsv1.2
+username jucelei
+password jucelei
+try_private true
+start_type automatic
+
+#########################################
+# LOCAL LISTENER
+#########################################
+
+listener 1883
+allow_anonymous false
+password_file /etc/mosquitto/pwfile
+allow_duplicate_messages false
